@@ -1,0 +1,76 @@
+name: Task 4 CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Allows manual trigger
+
+env:
+  DOCKER_IMAGE_NAME: task-manager-app
+  DOCKER_REGISTRY: docker.io
+  JAVA_VERSION: '17'
+
+jobs:
+  # Step 1: Code Build and Test
+  build:
+    name: Code Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Build with Maven (Code Build Step)
+      run: mvn clean package -DskipTests
+
+    - name: Upload JAR Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: application-jar
+        path: target/*.jar
+
+  # Step 2: Docker Build and Push
+  docker-build:
+    name: Docker Build and Push
+    runs-on: ubuntu-latest
+    needs: build # Requires the 'build' job to succeed
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download JAR Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: application-jar
+        path: target/ # Downloads the JAR into the target/ directory
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Extract Docker metadata (for tagging)
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}
+        tags: |
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=sha,prefix={{branch}}-
+
+    - name: Build and Push Docker Image (Docker Build Step)
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
